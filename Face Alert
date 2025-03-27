@@ -1,0 +1,74 @@
+import cv2
+import face_recognition
+import os
+import asyncio
+from telegram import Bot
+from io import BytesIO
+
+bot_token = #"Bot Token"
+chat_ids = #["Bot IDS"]
+
+async def send_alert_to_telegram(image_bytes):
+    bot = Bot(token=bot_token)
+    for chat_id in chat_ids:
+        try:
+            await bot.send_message(chat_id=chat_id, text="Unknown person detected!")
+            await bot.send_photo(chat_id=chat_id, photo=image_bytes, caption="Alert: Unknown person detected!")
+            print(f"Message and image sent to {chat_id}")
+        except Exception as e:
+            print(f"Failed to send message or image to {chat_id}: {e}")
+
+known_face_encodings = []
+known_face_names = []
+image_paths = [
+    r#"Image Path",
+]
+
+for image_path in image_paths:
+    image = face_recognition.load_image_file(image_path)
+    face_encoding = face_recognition.face_encodings(image)[0]
+    known_face_encodings.append(face_encoding)
+    known_face_names.append(os.path.basename(image_path).split('.')[0])
+
+video_capture = cv2.VideoCapture(0)
+
+async def main_loop():
+    while True:
+        ret, frame = video_capture.read()
+        if not ret:
+            continue
+
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        face_locations = face_recognition.face_locations(rgb_frame)
+        face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+
+        for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
+            matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
+            name = "Unknown"
+
+            if True in matches:
+                first_match_index = matches.index(True)
+                name = known_face_names[first_match_index]
+
+            cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+            cv2.putText(frame, name, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+
+            if name == "Unknown":
+                print("Unknown person detected!")
+                _, img_encoded = cv2.imencode('.jpg', frame)
+                img_bytes = BytesIO(img_encoded.tobytes())
+
+                await send_alert_to_telegram(img_bytes)
+
+        cv2.imshow('Face Recognition', frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+try:
+    asyncio.run(main_loop())
+except KeyboardInterrupt:
+    print("Program interrupted.")
+finally:
+    video_capture.release()
+    cv2.destroyAllWindows()
